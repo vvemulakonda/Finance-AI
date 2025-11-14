@@ -1,0 +1,52 @@
+--- General ---
+
+Ignore OS-specific files
+
+.DS_Store
+Thumbs.db
+
+--- Python / Backend ---
+
+Ignore the virtual environment folder
+
+/backend/myenv/
+/backend/venv/
+
+Ignore Python cache files
+
+pycache/
+*.pyc
+
+Ignore our local cache database!
+
+This is very important. Render will use its own.
+
+*.db
+*.sqlite
+*.sqlite3
+analysis_cache.db
+
+Ignore local environment files (that might hold secrets)
+
+.env
+.env.*
+
+--- Node / Frontend ---
+
+Ignore the massive node_modules folder
+
+/frontend/node_modules/
+
+Ignore local environment files
+
+/frontend/.env.local
+
+Ignore build output
+
+/frontend/dist/
+
+Ignore logs
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
