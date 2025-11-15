@@ -7,12 +7,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+from contextlib import asynccontextmanager # For startup/shutdown events
 
 # --- Import from our other files ---
-# These imports come from your existing data_fetcher.py and ai_logic.py
 try:
-    # We also need load_embedding_model from data_fetcher
-    from data_fetcher import get_fundamentals, get_news, process_and_embed, load_embedding_model
+    # Import all necessary functions from your helper files
+    from data_fetcher import (
+        get_fundamentals, 
+        get_news, 
+        process_and_embed, 
+        load_embedding_model, 
+        download_nltk_data  # This is our startup function
+    )
     from ai_logic import retrieve_relevant_chunks, build_prompt, get_analysis
 except ImportError as e:
     print(f"Error: Could not import from data_fetcher.py or ai_logic.py: {e}")
@@ -24,7 +30,8 @@ except ImportError as e:
 YOUR_API_KEY = os.environ.get("YOUR_API_KEY")
 if not YOUR_API_KEY:
     print("Error: YOUR_API_KEY (for NewsAPI) is not set as an environment variable.")
-    sys.exit(1)
+    # We don't exit here, as the server might need to start for other reasons
+    # But API calls will fail.
 
 # --- 1. Define API Models ---
 # This Pydantic model *must* match the data your React form sends
@@ -35,21 +42,45 @@ class AnalysisRequest(BaseModel):
     riskTolerance: str
     tradingPreferences: str
 
+# --- NEW: FastAPI Lifespan Event ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    This function runs on server startup and shutdown.
+    """
+    # --- Code to run ON STARTUP ---
+    print("--- Server starting up... ---")
+    
+    print("--- Initializing database ---")
+    init_db()
+    
+    print("--- Downloading NLTK data (if needed) ---")
+    download_nltk_data()
+    
+    print("--- Pre-loading embedding model ---")
+    load_embedding_model() # Pre-load the model
+    
+    print("--- Startup complete. Server is ready. ---")
+    
+    yield  # This is where the application will run
+    
+    # --- Code to run ON SHUTDOWN (if any) ---
+    print("--- Server shutting down... ---")
+
 # --- 2. Initialize FastAPI App ---
-app = FastAPI()
+app = FastAPI(lifespan=lifespan) # Added the lifespan event
 
 # --- 3. Add CORS Middleware ---
-# This is CRITICAL to allow your Vercel frontend
-# to talk to your Render backend
+# This allows your Vercel frontend to talk to your Render backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins (Vercel, localhost, etc.)
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
 
-# --- 4. Caching Logic (from main.py) ---
+# --- 4. Caching Logic ---
 # Read DB_NAME from Environment Variables (set in Render dashboard)
 DB_NAME = os.environ.get("DB_NAME", "analysis_cache.db")
 CACHE_DURATION = 3600  # 1 hour
@@ -83,7 +114,6 @@ def get_cached_analysis(ticker):
             if (time.time() - timestamp) < CACHE_DURATION:
                 return analysis
     except sqlite3.OperationalError:
-        # DB might not be initialized yet, or path is wrong
         print(f"Warning: Could not read from cache database at {DB_NAME}")
         return None
     return None
@@ -106,6 +136,9 @@ async def analyze_stock(request: AnalysisRequest):
     This is the main API endpoint that the React frontend will call.
     It runs the complete analysis pipeline.
     """
+    if not YOUR_API_KEY:
+        return {"error": "Server Configuration Error: NewsAPI key is not set."}
+
     ticker = request.ticker.upper()
     print(f"--- Received new analysis request for {ticker} ---")
     
@@ -168,18 +201,12 @@ async def analyze_stock(request: AnalysisRequest):
 
 # --- 6. Run the Server ---
 if __name__ == "__main__":
-    print("--- Initializing database ---")
-    init_db()
-    
-    print("--- Loading embedding model on startup ---")
-    load_embedding_model() # Pre-load the model
-    
+    # The lifespan event handles all startup logic.
+    # We just need to run uvicorn.
     print("--- Starting FastAPI server ---")
     
-    # Get port and host from environment for deployment
     port = int(os.environ.get("PORT", 8000))
-    # Render's start command uses 0.0.0.0, so we default to that
     host = os.environ.get("HOST", "0.0.0.0") 
     
     print(f"--- Running on http://{host}:{port} ---")
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run("api_server:app", host=host, port=port, reload=False)
