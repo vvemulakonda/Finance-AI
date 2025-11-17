@@ -17,9 +17,6 @@ except ImportError:
     sys.exit(1)
 
 # --- Download NLTK data (one-time) ---
-# --- MODIFICATION ---
-# We've moved the download logic into a function that api_server.py can call
-# at startup.
 def download_nltk_data():
     """
     Downloads the NLTK 'punkt' tokenizer if not found.
@@ -36,7 +33,6 @@ def download_nltk_data():
     except LookupError:
         print("NLTK 'punkt_tab' resource not found. Downloading...")
         nltk.download('punkt_tab', quiet=True)
-# --- END MODIFICATION ---
 
 # --- Global var to hold the embedding model ---
 embedding_model = None
@@ -92,7 +88,7 @@ def get_news(ticker_symbol, api_key, num_articles=20):
     """
     Fetches recent news articles from NewsAPI.org.
     """
-    base_url = "https://newsapi.org/v2/everything"
+    base_url = "[https://newsapi.org/v2/everything](https://newsapi.org/v2/everything)"
     params = {
         'q': ticker_symbol,
         'apiKey': api_key,
@@ -224,6 +220,8 @@ if __name__ == "__main__":
         
         # 1. Test yfinance
         print(f"Fetching fundamentals for {TICKER}...")
+        load_embedding_model() # Need to load this for the test
+        download_nltk_data() # Need this for the test
         fundamentals, summary = get_fundamentals(TICKER)
         if fundamentals:
             print("--- Fundamentals ---")
