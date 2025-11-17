@@ -10,19 +10,18 @@ except ImportError:
     sys.exit(1)
 
 # --- !! IMPORTANT !! ---
-# PASTE YOUR Google Gemini API KEY HERE:
-GEMINI_API_KEY = "AIzaSyA-PrHFsmnaoMKYrVjUnVabYc9qms4qVvo" # Get one from Google AI Studio
+# Load API key from environment variable (set in Render)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # --- Configure the Gemini API ---
 try:
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
     else:
-        print("Error: GEMINI_API_KEY is not set in ai_logic.py. Please add it.")
+        print("Error: GEMINI_API_KEY is not set in ai_logic.py or environment.")
         sys.exit(1)
         
-    # NEW, STABLE LINE:
-    model = genai.GenerativeModel('gemini-2.5-pro')
+    model = genai.GenerativeModel('gemini-1.0-pro') # Using the stable 'gemini-1.0-pro'
 except Exception as e:
     print(f"Error configuring Gemini API: {e}")
     print("Please ensure your API key is correct and valid.")
@@ -39,8 +38,6 @@ def retrieve_relevant_chunks(query, vector_index, text_chunks, metadata, k=5):
         return [], []
     
     # 1. Embed the query
-    # We get the model from the 'data_fetcher' module's global scope
-    # This is a bit of a hack, but avoids loading the model twice.
     try:
         from data_fetcher import embedding_model
         if embedding_model is None:
@@ -52,7 +49,6 @@ def retrieve_relevant_chunks(query, vector_index, text_chunks, metadata, k=5):
         return [], []
 
     # 2. Search the FAISS index
-    # D = distances, I = indices of the chunks
     try:
         D, I = vector_index.search(query_embedding, k)
     except Exception as e:
@@ -64,14 +60,13 @@ def retrieve_relevant_chunks(query, vector_index, text_chunks, metadata, k=5):
     citations = set()  # Use a set to avoid duplicate citations
     
     for i, chunk_index in enumerate(I[0]):
-        # Ensure the index is valid
         if chunk_index < 0 or chunk_index >= len(text_chunks):
             continue
             
         chunk = text_chunks[chunk_index]
         meta = metadata[chunk_index]
         
-        # --- FIX: Use .get() to provide default values and prevent KeyErrors ---
+        # --- Use .get() to provide default values ---
         source_name = meta.get('source', 'Unknown Source')
         source_url = meta.get('url', '#')
         source_date = meta.get('date', 'N/A')
@@ -83,36 +78,59 @@ def retrieve_relevant_chunks(query, vector_index, text_chunks, metadata, k=5):
 
     return relevant_chunks, list(citations)
 
-# --- 2. Prompt Engineering ---
+# --- 2. Prompt Engineering (UPDATED) ---
 
-def build_prompt(ticker, fundamentals, relevant_chunks, citations):
+def build_prompt(ticker, fundamentals, relevant_chunks, citations, user_profile):
     """
     Builds the final prompt string to send to the LLM.
+    This is now UPDATED to only ask for analysis and forecast.
     """
     
     # --- System Prompt: The AI's "Instructions" ---
     system_prompt = """
-You are a professional financial analyst. Your task is to provide a concise, data-driven analysis of a stock based *only* on the fundamentals and news articles provided.
+You are an expert financial analyst and portfolio manager. Your task is to provide a comprehensive, data-driven analysis for a *specific user* based on their profile and the provided data.
+
+**USER PROFILE:**
+- **Financial Condition:** {user_profile.financialCondition}
+- **Risk Tolerance:** {user_profile.riskTolerance}
+- **Expected Return %:** {user_profile.expectedReturn}%
+- **Trading Preferences:** {user_profile.tradingPreferences}
+
+**YOUR TASK:**
+Analyze the provided stock data and generate a personalized report. The user is asking for:
+1.  A 12-month price forecast.
+2.  Specific investment advice (entry point, return %, stop loss).
 
 **RULES:**
-1.  Do NOT use any external knowledge.
-2.  Do NOT make up information or specific price targets.
-3.  Your analysis must be objective and balanced, mentioning both positive and negative points.
-4.  Refer *explicitly* to the provided financial indicators in your reasoning.
-5.  Base your "Forecast" on the *sentiment* and *facts* found in the provided news, combined with the fundamentals.
-6.  The output must be formatted *exactly* as follows (use Markdown):
+1.  Do NOT use any external knowledge. Base your *entire* analysis on the provided data.
+2.  **CRITICAL:** You *must* generate the 12-month forecast and investment advice, even if the data is limited. Use the fundamentals and news sentiment to make logical estimations.
+3.  The user's profile is the most important context. All advice *must* be tailored to their risk tolerance.
+4.  The output must be formatted *exactly* as a single JSON object. Do not include markdown formatting (```json) or any text outside the curly braces.
 
-**Analysis:**
-(Your overall analysis of the company's current situation, using the financial indicators.)
-
-**Key News:**
-(A summary of the most important points from the news articles provided.)
-
-**Forecast:**
-* **1 Week:** (Your short-term outlook. e.g., "Driven by recent earnings news..." or "Likely stable as news flow is light...")
-* **1 Month:** (Your medium-term outlook. e.g., "Depends on follow-through from the recent product launch...")
-* **6 Months:** (Your longer-term outlook. e.g., "Faces headwinds from... but has tailwinds from...")
-* **12 Months:** (Your long-term outlook, focused on the major fundamental trends.)
+**REQUIRED JSON OUTPUT FORMAT:**
+{{
+  "analysis": "...",
+  "keyNews": "...",
+  "forecastData": [
+    {{"month": "Jan", "price": 150, "type": "history"}},
+    {{"month": "Feb", "price": 155, "type": "history"}},
+    {{"month": "Mar", "price": 160, "type": "history"}},
+    {{"month": "Apr", "price": 165, "type": "history"}},
+    {{"month": "May", "price": 170, "type": "history"}},
+    {{"month": "Jun", "price": 175, "type": "history"}},
+    {{"month": "Jul", "price": 180, "type": "history"}},
+    {{"month": "Aug", "price": 185, "type": "history"}},
+    {{"month": "Sep", "price": 190, "type": "forecast"}},
+    {{"month": "Oct", "price": 195, "type": "forecast"}},
+    {{"month": "Nov", "price": 200, "type": "forecast"}},
+    {{"month": "Dec", "price": 205, "type": "forecast"}}
+  ],
+  "investmentAdvice": {{
+    "entryPoint": 175.50,
+    "expectedReturn": 18.0,
+    "stopLoss": 168.00
+  }}
+}}
 """
     
     # --- User Prompt: The "Data" ---
@@ -127,7 +145,10 @@ You are a professional financial analyst. Your task is to provide a concise, dat
         news_str = "No recent news articles were found or provided."
         
     # Combine it all
-    user_prompt = f"""
+    # We use .format() on the system prompt to insert the user's profile
+    formatted_system_prompt = system_prompt.format(user_profile=user_profile)
+    
+    user_prompt_data = f"""
 --- START OF DATA ---
 
 **Stock Ticker:**
@@ -141,23 +162,34 @@ You are a professional financial analyst. Your task is to provide a concise, dat
 
 --- END OF DATA ---
 
-Please provide your analysis based *only* on the data above, following all rules and the required format.
+Please provide your analysis based *only* on the data above, following all rules and the required JSON format.
 """
     
-    return system_prompt + user_prompt
+    return formatted_system_prompt + user_prompt_data
 
-# --- 3. AI Generation ---
+# --- 3. AI Generation (UPDATED) ---
 
 def get_analysis(prompt_text):
     """
     Sends the prompt to the Gemini API and gets the response.
+    UPDATED to tell Gemini to return JSON.
     """
     if not GEMINI_API_KEY:
         return "Error: Gemini API key is not configured."
         
     try:
         print("Generating analysis with Gemini API...")
-        response = model.generate_content(prompt_text)
+        
+        # --- NEW: Tell the model to output JSON ---
+        generation_config = {
+            "response_mime_type": "application/json",
+        }
+        
+        response = model.generate_content(
+            prompt_text,
+            generation_config=generation_config
+        )
+        # The response.text will now be a JSON string
         return response.text
         
     except Exception as e:
