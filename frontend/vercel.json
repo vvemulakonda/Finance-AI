@@ -3,5 +3,5 @@
   "installCommand": "cd frontend && pnpm install --frozen-lockfile",
   "outputDirectory": "frontend/.next",
   "framework": "nextjs",
-  "ignoreCommand": "if [ -z \"$(git rev-parse --parents HEAD)\" ]; then exit 1; fi && git diff --quiet HEAD^ HEAD -- frontend/"
+  "ignoreCommand": "if [ -z \"$VERCEL_GIT_PREVIOUS_SHA\" ]; then exit 1; fi; git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" \"$VERCEL_GIT_COMMIT_SHA\" -- frontend/"
 }
