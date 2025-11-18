@@ -1,6 +1,6 @@
 {
-  "buildCommand": "cd frontend && pnpm install --frozen-lockfile && pnpm run build",
-  "installCommand": "cd frontend && pnpm install --frozen-lockfile",
+  "buildCommand": "cd frontend && npm run build"
+  "installCommand": "cd frontend && npm ci"
   "outputDirectory": "frontend/.next",
   "framework": "nextjs",
   "ignoreCommand": "bash scripts/vercel-ignore.sh"
