@@ -3,16 +3,16 @@ import sqlite3
 import time
 import sys
 import os
-import json # --- NEW IMPORT ---
-from fastapi import FastAPI
+import json
+import uuid # For creating unique job IDs
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from contextlib import asynccontextmanager # For startup/shutdown events
+from contextlib import asynccontextmanager
 
 # --- Import from our other files ---
 try:
-    # Import all necessary functions from your helper files
     from data_fetcher import (
         get_fundamentals, 
         get_news, 
@@ -21,16 +21,12 @@ try:
         download_nltk_data  
     )
     from ai_logic import retrieve_relevant_chunks, build_prompt, get_analysis
-    # --- NEW IMPORT for the recommender ---
     from stock_recommender import recommend_stocks
-
 except ImportError as e:
     print(f"Error: Could not import from helper files: {e}")
-    print("Please make sure all .py files are in the same directory.")
     sys.exit(1)
 
-# --- !! IMPORTANT !! ---
-# Load API keys from Environment Variables (set in Render dashboard)
+# --- Load API keys ---
 YOUR_API_KEY = os.environ.get("YOUR_API_KEY")
 if not YOUR_API_KEY:
     print("Error: YOUR_API_KEY (for NewsAPI) is not set as an environment variable.")
@@ -43,38 +39,37 @@ class AnalysisRequest(BaseModel):
     riskTolerance: str
     tradingPreferences: str
 
+class AnalysisResponse(BaseModel):
+    jobId: str
+
+class StatusResponse(BaseModel):
+    status: str
+    result: Optional[str] = None # Will contain the JSON string when complete
+
 # --- 2. FastAPI Lifespan Event ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    This function runs on server startup and shutdown.
-    """
+    """ Runs on server startup """
     print("--- Server starting up... ---")
     print("--- Initializing database ---")
     init_db()
     print("--- Downloading NLTK data (if needed) ---")
     download_nltk_data()
     print("--- Pre-loading embedding model ---")
-    load_embedding_model() # Pre-load the model
+    load_embedding_model()
     print("--- Startup complete. Server is ready. ---")
-    
-    yield  # The application runs here
-    
+    yield
     print("--- Server shutting down... ---")
 
 # --- 3. Initialize FastAPI App ---
 app = FastAPI(lifespan=lifespan) 
-
-# --- 4. Add CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_origins=["*"], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- 5. Caching Logic ---
+# --- 4. Caching & Database Logic (UPDATED) ---
 DB_NAME = os.environ.get("DB_NAME", "analysis_cache.db")
 CACHE_DURATION = 3600  # 1 hour
 
@@ -84,15 +79,74 @@ def init_db():
         os.makedirs(db_dir)
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+    
+    # Cache for *individual tickers* (from previous version)
     c.execute('''
         CREATE TABLE IF NOT EXISTS cache
         (ticker TEXT PRIMARY KEY,
          analysis TEXT,
          timestamp REAL)
     ''')
+    
+    # --- NEW: Table to track job status ---
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS jobs
+        (job_id TEXT PRIMARY KEY,
+         status TEXT,
+         result TEXT,
+         timestamp REAL)
+    ''')
     conn.commit()
     conn.close()
 
+# --- Job Status Functions ---
+def create_job(job_id: str):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("INSERT INTO jobs (job_id, status, result, timestamp) VALUES (?, ?, ?, ?)",
+                  (job_id, "pending", None, time.time()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error creating job: {e}")
+
+def update_job_complete(job_id: str, result: str):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("UPDATE jobs SET status = ?, result = ? WHERE job_id = ?",
+                  ("complete", result, job_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error updating job to complete: {e}")
+
+def update_job_failed(job_id: str, error_message: str):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("UPDATE jobs SET status = ?, result = ? WHERE job_id = ?",
+                  ("failed", error_message, job_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error updating job to failed: {e}")
+
+def get_job_status(job_id: str):
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("SELECT status, result FROM jobs WHERE job_id = ?", (job_id,))
+        result = c.fetchone()
+        conn.close()
+        if result:
+            return {"status": result[0], "result": result[1]}
+    except Exception as e:
+        print(f"Error getting job status: {e}")
+    return {"status": "not_found", "result": None}
+
+# --- Caching Functions (Unchanged) ---
 def get_cached_analysis(ticker):
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -119,38 +173,35 @@ def set_cached_analysis(ticker, analysis):
     except sqlite3.OperationalError:
         print(f"Warning: Could not write to cache database at {DB_NAME}")
 
-# --- 6. Main API Endpoint (UPDATED) ---
-@app.post("/api/analyze")
-async def analyze_stock(request: AnalysisRequest):
+# --- 5. The Long-Running Analysis Task (NEW) ---
+def run_full_analysis_task(job_id: str, request: AnalysisRequest):
     """
-    This is the main API endpoint that the React frontend will call.
-    It now orchestrates *both* the AI analysis and the rule-based recommender.
+    This is the long-running function that runs in the background.
     """
-    if not YOUR_API_KEY:
-        return {"error": "Server Configuration Error: NewsAPI key is not set."}
-
-    ticker = request.ticker.upper()
-    print(f"--- Received new analysis request for {ticker} ---")
-    
-    # 1. Check cache
-    cached_result = get_cached_analysis(ticker)
-    if cached_result:
-        print(f"Returning cached result for {ticker}.")
-        return {"analysis": cached_result}
-
-    print(f"--- Starting new analysis for {ticker} ---")
-    
     try:
+        ticker = request.ticker.upper()
+        print(f"--- [Background Job: {job_id}] Starting analysis for {ticker} ---")
+        
+        # 1. Check cache first
+        cached_result = get_cached_analysis(ticker)
+        if cached_result:
+            print(f"[Background Job: {job_id}] Found cached result.")
+            update_job_complete(job_id, cached_result)
+            return
+
+        if not YOUR_API_KEY:
+            raise Exception("Server Configuration Error: NewsAPI key is not set.")
+
         # --- TASK 1: Get AI Analysis (Forecast, Advice) ---
-        print(f"Fetching fundamentals for {ticker}...")
+        print(f"[Background Job: {job_id}] Fetching fundamentals...")
         fundamentals, summary = get_fundamentals(ticker)
         if not fundamentals:
-            return {"error": f"Could not fetch fundamental data for ticker: {ticker}"}
+            raise Exception(f"Could not fetch fundamental data for ticker: {ticker}")
 
-        print(f"Fetching news for {ticker}...")
+        print(f"[Background Job: {job_id}] Fetching news...")
         news = get_news(ticker, YOUR_API_KEY)
         
-        print("Processing and embedding data...")
+        print(f"[Background Job: {job_id}] Processing and embedding data...")
         vector_index, text_chunks, metadata = process_and_embed(news, summary, ticker)
         
         query = f"Recent news, developments, and user context for {ticker}"
@@ -158,7 +209,7 @@ async def analyze_stock(request: AnalysisRequest):
             query, vector_index, text_chunks, metadata
         )
         
-        print("Building AI prompt...")
+        print(f"[Background Job: {job_id}] Building AI prompt...")
         user_prompt = build_prompt(
             ticker=request.ticker,
             fundamentals=fundamentals,
@@ -167,11 +218,10 @@ async def analyze_stock(request: AnalysisRequest):
             user_profile=request  
         )
         
-        # This is a JSON string: '{"analysis": "...", "forecastData": [...]...}'
         ai_json_string = get_analysis(user_prompt)
         
-        # --- TASK 2: Get Rule-Based Recommendations ---
-        print("Running rule-based stock recommender...")
+        # --- TASK 2: Get Rule-Based Recommendations (THE SLOW PART) ---
+        print(f"[Background Job: {job_id}] Running rule-based stock recommender...")
         recommendations_list = recommend_stocks(
             trading_history=request.tradingPreferences,
             financial_condition=request.financialCondition,
@@ -180,33 +230,59 @@ async def analyze_stock(request: AnalysisRequest):
         )
         
         # --- TASK 3: Combine Results ---
-        print("Combining AI analysis and recommendations...")
+        print(f"[Background Job: {job_id}] Combining results...")
         
-        # Parse the AI's JSON string into a Python dict
         ai_data = json.loads(ai_json_string)
-        
-        # Add the new recommendations list to this dict
         ai_data['recommendedStocks'] = recommendations_list
         
-        # Add citations if they exist
         if citations:
             citation_header = "\n\n--- Sources ---\n"
             citation_list = "\n".join(citations)
-            ai_data['analysis'] += citation_header + citation_list # Add to the analysis text
+            ai_data['analysis'] += citation_header + citation_list
         
-        # Convert the *final, combined* dict back into a JSON string
         final_json_string = json.dumps(ai_data)
         
-        # 7. Cache and return the final result
+        # --- TASK 4: Cache and Update Job Status ---
         set_cached_analysis(ticker, final_json_string)
-        print(f"--- Analysis for {ticker} complete. ---")
-        return {"analysis": final_json_string} # Send the final string
+        update_job_complete(job_id, final_json_string)
+        print(f"--- [Background Job: {job_id}] Analysis for {ticker} complete. ---")
 
     except Exception as e:
+        print(f"--- [Background Job: {job_id}] FAILED ---")
         print(f"An unexpected error occurred: {e}")
         import traceback
         traceback.print_exc()
-        return {"error": f"An unexpected server error occurred: {e}"}
+        update_job_failed(job_id, str(e))
+
+# --- 6. API Endpoints (UPDATED) ---
+
+@app.post("/api/start-analysis", response_model=AnalysisResponse)
+async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
+    """
+    This endpoint creates a new job, starts it in the background,
+    and *immediately* returns a job ID to the frontend.
+    """
+    job_id = str(uuid.uuid4())
+    print(f"--- Received new request. Creating Job ID: {job_id} ---")
+    
+    # Create the job in the DB
+    create_job(job_id)
+    
+    # Add the long-running task to the background
+    background_tasks.add_task(run_full_analysis_task, job_id, request)
+    
+    # Return the Job ID to the frontend
+    return {"jobId": job_id}
+
+@app.get("/api/status/{job_id}", response_model=StatusResponse)
+async def get_analysis_status(job_id: str):
+    """
+    This endpoint is polled by the frontend every few seconds
+    to check if the job is "pending", "complete", or "failed".
+    """
+    print(f"--- Received status check for Job ID: {job_id} ---")
+    status = get_job_status(job_id)
+    return status
 
 # --- 7. Run the Server ---
 if __name__ == "__main__":
