@@ -36,14 +36,19 @@ Ignore local environment files (that might hold secrets)
 Ignore the massive node_modules folder
 
 /frontend/node_modules/
+/StockPreRecommFront/node_modules/
 
 Ignore local environment files
 
 /frontend/.env.local
+/StockPreRecommFront/.env.local
 
 Ignore build output
 
 /frontend/dist/
+/frontend/.next/
+/StockPreRecommFront/dist/
+/StockPreRecommFront/.next/
 
 Ignore logs
 
