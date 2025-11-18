@@ -4,3 +4,4 @@
   "outputDirectory": "frontend/.next",
   "framework": "nextjs",
   "ignoreCommand": "bash scripts/vercel-ignore.sh"
+}
