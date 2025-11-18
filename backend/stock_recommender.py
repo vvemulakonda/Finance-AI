@@ -1,14 +1,6 @@
 """
 Stock Recommendation System Module
-
-This module provides functionality to recommend stocks based on:
-- User's trading history (parsed from natural language)
-- Financial condition
-- Expected returns
-- Risk tolerance
-
-It uses yfinance for data fetching (imported from data_fetcher) and
-scikit-learn/pandas for scoring and ranking stocks.
+(This is the file you provided, now corrected)
 """
 
 import re
@@ -16,10 +8,18 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Optional
-from data_fetcher import get_fundamentals
+
+# --- FIX: We must import from data_fetcher in a way that allows this file
+# to be run, but also be imported by api_server.py.
+# We'll use a try-except block for the import.
+try:
+    from data_fetcher import get_fundamentals
+except ImportError:
+    # This allows the file to be imported by api_server.py
+    from .data_fetcher import get_fundamentals
+
 
 # --- Stock Universe: Popular stocks for recommendation ---
-# Using a mix of S&P 500 major stocks across different sectors
 POPULAR_STOCKS = [
     # Technology
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'NFLX', 'AMD', 'INTC',
@@ -77,17 +77,6 @@ def parse_trading_history(trading_history: str) -> Dict:
     - Sectors of interest
     - Trading patterns (buy/sell frequency, holding periods)
     - Stock types (growth, value, dividend)
-    
-    Args:
-        trading_history: Natural language string describing trading history
-        
-    Returns:
-        Dictionary with parsed information:
-        {
-            'tickers': List[str],
-            'sectors': List[str],
-            'preferences': Dict
-        }
     """
     if not trading_history or not isinstance(trading_history, str):
         return {'tickers': [], 'sectors': [], 'preferences': {}}
@@ -136,50 +125,29 @@ def get_stock_universe(candidate_count: int = 500) -> List[str]:
     """
     Gets a list of candidate stocks for recommendation.
     Tries to fetch S&P 500 list dynamically, falls back to POPULAR_STOCKS if fetch fails.
-    
-    Args:
-        candidate_count: Maximum number of stocks to consider (default 500 for S&P 500)
-        
-    Returns:
-        List of stock tickers
     """
-    # Try to fetch S&P 500 list from Wikipedia
     try:
         print("Fetching S&P 500 stock list...")
-        # Fetch S&P 500 list from Wikipedia
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
         tables = pd.read_html(url)
-        sp500_table = tables[0]  # First table contains the S&P 500 companies
+        sp500_table = tables[0]
         tickers = sp500_table['Symbol'].tolist()
         
-        # Clean up tickers (remove dots that indicate share classes, e.g., "BRK.B" -> "BRK-B")
+        # Clean up tickers
         cleaned_tickers = [ticker.replace('.', '-') for ticker in tickers]
         
         print(f"Successfully fetched {len(cleaned_tickers)} S&P 500 stocks")
-        # Return limited by candidate_count
         return cleaned_tickers[:candidate_count]
         
     except Exception as e:
         print(f"Could not fetch S&P 500 list: {e}")
         print("Falling back to POPULAR_STOCKS list...")
-        # Fallback to the hardcoded popular stocks list
         return POPULAR_STOCKS[:min(candidate_count, len(POPULAR_STOCKS))]
 
 
 def fetch_stock_data(ticker: str) -> Optional[Dict]:
     """
     Fetches comprehensive stock data using yfinance.
-    Uses get_fundamentals from data_fetcher to maintain consistency.
-    
-    NOTE: yfinance can fetch data for ANY valid ticker symbol worldwide,
-    not just stocks in POPULAR_STOCKS or S&P 500. The stock universe list
-    is only used to limit the candidate pool for recommendations.
-    
-    Args:
-        ticker: Stock ticker symbol (can be any valid ticker, e.g., 'AAPL', 'TSLA', '7203.T' for Japanese stocks, etc.)
-        
-    Returns:
-        Dictionary with stock data, or None if fetch fails
     """
     try:
         # Use existing get_fundamentals function
@@ -187,11 +155,9 @@ def fetch_stock_data(ticker: str) -> Optional[Dict]:
         if not fundamentals:
             return None
         
-        # Get additional data from yfinance for scoring
         ticker_obj = yf.Ticker(ticker)
         info = ticker_obj.info
         
-        # Get historical data for volatility calculation
         hist = ticker_obj.history(period="1y")
         if hist.empty:
             volatility = None
@@ -199,11 +165,9 @@ def fetch_stock_data(ticker: str) -> Optional[Dict]:
             returns = hist['Close'].pct_change().dropna()
             volatility = returns.std() * np.sqrt(252)  # Annualized volatility
         
-        # Get sector and industry
         sector = info.get('sector', 'Unknown')
         industry = info.get('industry', 'Unknown')
         
-        # Compile all data
         stock_data = {
             'ticker': ticker,
             'fundamentals': fundamentals,
@@ -237,15 +201,6 @@ def calculate_stock_score(
 ) -> float:
     """
     Calculates a recommendation score for a stock based on user profile.
-    Uses multiple factors weighted appropriately.
-    
-    Args:
-        stock_data: Dictionary with stock information
-        user_profile: User's financial condition, expected returns, risk tolerance
-        trading_history_parsed: Parsed trading history information
-        
-    Returns:
-        Float score (higher is better)
     """
     if not stock_data:
         return 0.0
@@ -266,10 +221,8 @@ def calculate_stock_score(
         if stock_sector in trading_history_parsed['sectors']:
             sector_score = 1.0
         else:
-            # Partial match based on industry keywords
             sector_score = 0.3
     else:
-        # No sector preference, neutral score
         sector_score = 0.5
     
     score += weights['sector_match'] * sector_score
@@ -278,7 +231,7 @@ def calculate_stock_score(
     risk_tolerance = user_profile.get('riskTolerance', 'Medium')
     risk_config = RISK_LEVELS.get(risk_tolerance, RISK_LEVELS['Medium'])
     
-    risk_score = 0.5  # Default neutral
+    risk_score = 0.5
     
     pe_ratio = stock_data.get('pe_ratio')
     volatility = stock_data.get('volatility')
@@ -286,7 +239,7 @@ def calculate_stock_score(
     
     if pe_ratio and pe_ratio != 'N/A':
         try:
-            pe_val = float(pe_ratio) if isinstance(pe_ratio, (int, float)) else 0
+            pe_val = float(pe_ratio)
             pe_min, pe_max = risk_config['pe_range']
             if pe_min <= pe_val <= pe_max:
                 risk_score += 0.3
@@ -304,7 +257,7 @@ def calculate_stock_score(
     
     if dividend_yield:
         div_pref = risk_config['dividend_preference']
-        div_yield_val = float(dividend_yield) if isinstance(dividend_yield, (int, float)) else 0
+        div_yield_val = float(dividend_yield)
         if div_pref == 'high' and div_yield_val > 0.02:
             risk_score += 0.2
         elif div_pref == 'medium' and 0.01 <= div_yield_val <= 0.03:
@@ -312,30 +265,27 @@ def calculate_stock_score(
         elif div_pref == 'low' and div_yield_val < 0.02:
             risk_score += 0.2
     
-    risk_score = min(1.0, risk_score)  # Cap at 1.0
+    risk_score = min(1.0, risk_score)
     score += weights['risk_match'] * risk_score
     
     # 3. Expected Return Match Score (0-1)
     expected_return = user_profile.get('expectedReturn', 10)
-    return_score = 0.5  # Default neutral
+    return_score = 0.5
     
-    # Estimate potential return based on fundamentals
     roe = stock_data.get('roe')
     peg = stock_data.get('peg_ratio')
     
     if roe and roe != 'N/A':
         try:
-            roe_val = float(roe) if isinstance(roe, (int, float)) else 0
-            # Higher ROE suggests better returns
-            if roe_val > expected_return / 10:  # Convert percentage expectation
+            roe_val = float(roe)
+            if roe_val > expected_return / 10:
                 return_score += 0.3
         except (ValueError, TypeError):
             pass
     
     if peg and peg != 'N/A':
         try:
-            peg_val = float(peg) if isinstance(peg, (int, float)) else 0
-            # PEG < 1 suggests undervalued/good growth potential
+            peg_val = float(peg)
             if 0 < peg_val < 1.5:
                 return_score += 0.2
         except (ValueError, TypeError):
@@ -345,15 +295,15 @@ def calculate_stock_score(
     score += weights['return_match'] * return_score
     
     # 4. Financial Health Score (0-1)
-    health_score = 0.5  # Default neutral
+    health_score = 0.5
     
     roe = stock_data.get('roe')
     debt_to_equity = stock_data.get('debt_to_equity')
     
     if roe and roe != 'N/A':
         try:
-            roe_val = float(roe) if isinstance(roe, (int, float)) else 0
-            if roe_val > 0.15:  # Good ROE
+            roe_val = float(roe)
+            if roe_val > 0.15:
                 health_score += 0.25
             elif roe_val > 0.10:
                 health_score += 0.15
@@ -362,8 +312,8 @@ def calculate_stock_score(
     
     if debt_to_equity and debt_to_equity != 'N/A':
         try:
-            de_val = float(debt_to_equity) if isinstance(debt_to_equity, (int, float)) else 0
-            if 0 < de_val < 1.0:  # Reasonable debt
+            de_val = float(debt_to_equity)
+            if 0 < de_val < 1.0:
                 health_score += 0.25
         except (ValueError, TypeError):
             pass
@@ -372,16 +322,15 @@ def calculate_stock_score(
     score += weights['financial_health'] * health_score
     
     # 5. Preference Match Score (0-1)
-    pref_score = 0.5  # Default neutral
+    pref_score = 0.5
     
     preferences = trading_history_parsed.get('preferences', {})
     pref_type = preferences.get('type')
     
     if pref_type == 'growth':
-        # Look for growth indicators (high PEG, high ROE, low dividend)
         if peg and peg != 'N/A':
             try:
-                peg_val = float(peg) if isinstance(peg, (int, float)) else 0
+                peg_val = float(peg)
                 if 0 < peg_val < 2.0:
                     pref_score += 0.3
             except (ValueError, TypeError):
@@ -390,17 +339,15 @@ def calculate_stock_score(
             pref_score += 0.2
     
     elif pref_type == 'value':
-        # Look for value indicators (low P/E, low P/B)
         if pe_ratio and pe_ratio != 'N/A':
             try:
-                pe_val = float(pe_ratio) if isinstance(pe_ratio, (int, float)) else 0
+                pe_val = float(pe_ratio)
                 if 0 < pe_val < 20:
                     pref_score += 0.3
             except (ValueError, TypeError):
                 pass
     
     elif pref_type == 'dividend':
-        # Look for dividend yield
         if dividend_yield and float(dividend_yield) > 0.02:
             pref_score += 0.5
     
@@ -419,27 +366,73 @@ def recommend_stocks(
 ) -> List[Dict]:
     """
     Main function to recommend stocks based on user profile.
-    
-    Args:
-        trading_history: Natural language trading history
-        financial_condition: List of financial condition descriptors
-        expected_return: Expected return percentage (e.g., 10 for 10%)
-        risk_tolerance: 'Low', 'Medium', or 'High'
-        num_recommendations: Number of stocks to recommend (default 10)
-        
-    Returns:
-        List of dictionaries, each containing:
-        {
-            'ticker': str,
-            'score': float,
-            'sector': str,
-            'reason': str,
-            'fundamentals': Dict
-        }
     """
     print(f"--- Starting stock recommendation process ---")
     
     # 1. Parse trading history
     print("Parsing trading history...")
     trading_history_parsed = parse_trading_history(trading_history)
-    print(f"Ext
+    
+    # --- FIX: Combined the broken print statement ---
+    print(f"Extracted: {len(trading_history_parsed['tickers'])} tickers, {len(trading_history_parsed['sectors'])} sectors")
+    
+    # 2. Build user profile
+    user_profile = {
+        'financialCondition': financial_condition,
+        'expectedReturn': expected_return,
+        'riskTolerance': risk_tolerance,
+        'tradingPreferences': trading_history
+    }
+    
+    # 3. Get candidate stocks
+    print("Getting candidate stocks...")
+    candidate_stocks = get_stock_universe(candidate_count=200)
+    
+    # 4. Fetch data and score each stock
+    print("Fetching stock data and calculating scores...")
+    scored_stocks = []
+    
+    for i, ticker in enumerate(candidate_stocks):
+        if (i + 1) % 10 == 0:
+            print(f"Processed {i + 1}/{len(candidate_stocks)} stocks...")
+        
+        stock_data = fetch_stock_data(ticker)
+        if not stock_data:
+            continue
+        
+        score = calculate_stock_score(stock_data, user_profile, trading_history_parsed)
+        
+        # Generate reason for recommendation
+        reason_parts = []
+        if trading_history_parsed.get('sectors') and stock_data.get('sector') in trading_history_parsed['sectors']:
+            reason_parts.append(f"Matches your interest in {stock_data.get('sector')} sector")
+        if score > 0.7:
+            reason_parts.append("Strong financial fundamentals")
+        if risk_tolerance == 'Low' and stock_data.get('volatility') and stock_data.get('volatility') < 0.25:
+            reason_parts.append("Low volatility suitable for conservative investors")
+        elif risk_tolerance == 'High' and stock_data.get('volatility') and stock_D.get('volatility') > 0.3:
+            reason_parts.append("Higher volatility aligns with risk tolerance")
+        
+        reason = "; ".join(reason_parts) if reason_parts else "Good overall match with your profile"
+        
+        scored_stocks.append({
+            'ticker': ticker,
+            'score': score,
+            'sector': stock_data.get('sector', 'Unknown'),
+            'industry': stock_data.get('industry', 'Unknown'),
+            'reason': reason,
+            'fundamentals': stock_data.get('fundamentals', {}),
+            'current_price': stock_data.get('current_price'),
+            'market_cap': stock_data.get('market_cap'),
+            'pe_ratio': stock_data.get('pe_ratio'),
+            'dividend_yield': stock_data.get('dividend_yield')
+        })
+    
+    # 5. Sort by score and return top N
+    scored_stocks.sort(key=lambda x: x['score'], reverse=True)
+    top_recommendations = scored_stocks[:num_recommendations]
+    
+    # --- FIX: Corrected the final truncated print statement ---
+    print(f"--- Recommendation complete. Top {len(top_recommendations)} stocks selected. ---")
+    
+    return top_recommendations
