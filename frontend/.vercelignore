@@ -1,0 +1,7 @@
+backend/
+*.log
+.git/
+node_modules/
+.env
+.env.local
+README.md
