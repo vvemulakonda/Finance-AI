@@ -17,10 +17,10 @@ import {
   CardHeader,
   CardTitle,
   CardDescription
-} from "../components/ui/card"; // Using Shadcn/ui Card component
+} from "./components/ui/card"; // Using Shadcn/ui Card component
 
 // --- FIX: Using relative path to import the type from page.tsx ---
-import { ForecastData } from "../lib/types";
+import { ForecastData } from "./lib/types";
 
 // Define the props for the chart component
 interface StockChartProps {
