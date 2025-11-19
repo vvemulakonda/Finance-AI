@@ -27,9 +27,9 @@ export interface RecommendedStockData {
 }
 
 export interface AnalysisResult {
+  forecastData: any[];
+  investmentAdvice: any;
+  recommendedStocks: any[];
   analysis: string;
   keyNews: string;
-  forecastData: ForecastData[];
-  investmentAdvice: InvestmentAdviceData;
-  recommendedStocks: RecommendedStockData[];
 }
