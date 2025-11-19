@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import "./globals.css";
+import "./gloal.css";
 import { cn } from "@/lib/utils"; // Import the utility function
 
 // Setup the default font
