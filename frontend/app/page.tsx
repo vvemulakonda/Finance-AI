@@ -15,7 +15,7 @@ import { SearchFormState, AnalysisResult } from "../lib/types";
 import {
   SearchFormState,
   AnalysisResult,
-} from "@/lib/types";
+} from "../lib/types";
 
 // HARDCODED BACKEND URL - Replace the environment variable
 const API_BASE_URL = "https://financeaibackend-uup2.onrender.com";
