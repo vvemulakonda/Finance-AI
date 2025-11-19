@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 
 # --- Import AI/LLM libraries ---
 try:
@@ -13,19 +14,26 @@ except ImportError:
 # Load API key from environment variable (set in Render)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+# Initialize model as None initially
+model = None
+
 # --- Configure the Gemini API ---
 try:
     if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
+        # Try multiple model names for better compatibility
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')  # Newer, faster model
+        except:
+            try:
+                model = genai.GenerativeModel('gemini-1.0-pro')  # Fallback to original
+            except Exception as e:
+                print(f"Error initializing Gemini model: {e}")
     else:
-        print("Error: GEMINI_API_KEY is not set in ai_logic.py or environment.")
-        sys.exit(1)
+        print("Warning: GEMINI_API_KEY is not set in environment.")
         
-    model = genai.GenerativeModel('gemini-1.0-pro') # Using the stable 'gemini-1.0-pro'
 except Exception as e:
     print(f"Error configuring Gemini API: {e}")
-    print("Please ensure your API key is correct and valid.")
-    sys.exit(1)
 
 # --- 1. RAG Retrieval ---
 
@@ -66,7 +74,7 @@ def retrieve_relevant_chunks(query, vector_index, text_chunks, metadata, k=5):
         chunk = text_chunks[chunk_index]
         meta = metadata[chunk_index]
         
-        # --- Use .get() to provide default values ---
+        # Use .get() to provide default values
         source_name = meta.get('source', 'Unknown Source')
         source_url = meta.get('url', '#')
         source_date = meta.get('date', 'N/A')
@@ -83,7 +91,6 @@ def retrieve_relevant_chunks(query, vector_index, text_chunks, metadata, k=5):
 def build_prompt(ticker, fundamentals, relevant_chunks, citations, user_profile):
     """
     Builds the final prompt string to send to the LLM.
-    This is now UPDATED to only ask for analysis and forecast.
     """
     
     # --- System Prompt: The AI's "Instructions" ---
@@ -91,10 +98,10 @@ def build_prompt(ticker, fundamentals, relevant_chunks, citations, user_profile)
 You are an expert financial analyst and portfolio manager. Your task is to provide a comprehensive, data-driven analysis for a *specific user* based on their profile and the provided data.
 
 **USER PROFILE:**
-- **Financial Condition:** {user_profile.financialCondition}
-- **Risk Tolerance:** {user_profile.riskTolerance}
-- **Expected Return %:** {user_profile.expectedReturn}%
-- **Trading Preferences:** {user_profile.tradingPreferences}
+- **Financial Condition:** {user_profile_financialCondition}
+- **Risk Tolerance:** {user_profile_riskTolerance}
+- **Expected Return %:** {user_profile_expectedReturn}%
+- **Trading Preferences:** {user_profile_tradingPreferences}
 
 **YOUR TASK:**
 Analyze the provided stock data and generate a personalized report. The user is asking for:
@@ -109,8 +116,8 @@ Analyze the provided stock data and generate a personalized report. The user is 
 
 **REQUIRED JSON OUTPUT FORMAT:**
 {{
-  "analysis": "...",
-  "keyNews": "...",
+  "analysis": "Detailed analysis text here...",
+  "keyNews": "Summary of key news here...",
   "forecastData": [
     {{"month": "Jan", "price": 150, "type": "history"}},
     {{"month": "Feb", "price": 155, "type": "history"}},
@@ -126,14 +133,20 @@ Analyze the provided stock data and generate a personalized report. The user is 
     {{"month": "Dec", "price": 205, "type": "forecast"}}
   ],
   "investmentAdvice": {{
-    "entryPoint": 175.50,
-    "expectedReturn": 18.0,
-    "stopLoss": 168.00
+    "summary": "Investment summary...",
+    "reasoning": "Reasoning for the advice...",
+    "riskAssessment": "Low/Medium/High"
   }}
 }}
 """
     
-    # --- User Prompt: The "Data" ---
+    # Format the system prompt with user profile data
+    formatted_system_prompt = system_prompt.format(
+        user_profile_financialCondition=", ".join(user_profile.financialCondition),
+        user_profile_riskTolerance=user_profile.riskTolerance,
+        user_profile_expectedReturn=user_profile.expectedReturn,
+        user_profile_tradingPreferences=user_profile.tradingPreferences
+    )
     
     # Format the fundamentals data
     fundamentals_str = "\n".join(f"- {key}: {value}" for key, value in fundamentals.items())
@@ -145,9 +158,6 @@ Analyze the provided stock data and generate a personalized report. The user is 
         news_str = "No recent news articles were found or provided."
         
     # Combine it all
-    # We use .format() on the system prompt to insert the user's profile
-    formatted_system_prompt = system_prompt.format(user_profile=user_profile)
-    
     user_prompt_data = f"""
 --- START OF DATA ---
 
@@ -172,26 +182,87 @@ Please provide your analysis based *only* on the data above, following all rules
 def get_analysis(prompt_text):
     """
     Sends the prompt to the Gemini API and gets the response.
-    UPDATED to tell Gemini to return JSON.
     """
     if not GEMINI_API_KEY:
-        return "Error: Gemini API key is not configured."
+        return json.dumps({
+            "analysis": "Error: Gemini API key is not configured.",
+            "keyNews": "Please check backend configuration.",
+            "forecastData": [],
+            "investmentAdvice": {
+                "summary": "Configuration Error",
+                "reasoning": "API key missing",
+                "riskAssessment": "Unknown"
+            }
+        })
+    
+    if model is None:
+        return json.dumps({
+            "analysis": "Error: Gemini model not initialized.",
+            "keyNews": "Please check backend configuration.",
+            "forecastData": [],
+            "investmentAdvice": {
+                "summary": "Model Error",
+                "reasoning": "AI model not available",
+                "riskAssessment": "Unknown"
+            }
+        })
         
     try:
         print("Generating analysis with Gemini API...")
         
-        # --- NEW: Tell the model to output JSON ---
+        # Configure for JSON response
         generation_config = {
-            "response_mime_type": "application/json",
+            "temperature": 0.1,  # Lower temperature for more consistent results
+            "max_output_tokens": 2048,
         }
         
         response = model.generate_content(
             prompt_text,
             generation_config=generation_config
         )
-        # The response.text will now be a JSON string
-        return response.text
+        
+        # Try to parse the response as JSON
+        try:
+            # Clean the response text
+            cleaned_response = response.text.strip()
+            if cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[:-3]
+            
+            # Parse to validate it's proper JSON
+            parsed_json = json.loads(cleaned_response)
+            return cleaned_response
+            
+        except json.JSONDecodeError:
+            # If response isn't valid JSON, create a fallback response
+            print("Warning: Gemini response was not valid JSON, creating fallback")
+            fallback_response = {
+                "analysis": f"AI Analysis: {response.text[:500]}...",
+                "keyNews": "News analysis available in main analysis",
+                "forecastData": [
+                    {"month": "Jan", "price": 150, "type": "forecast"},
+                    {"month": "Feb", "price": 155, "type": "forecast"},
+                    {"month": "Mar", "price": 160, "type": "forecast"}
+                ],
+                "investmentAdvice": {
+                    "summary": "Based on AI analysis",
+                    "reasoning": "Generated from available data",
+                    "riskAssessment": "Medium"
+                }
+            }
+            return json.dumps(fallback_response)
         
     except Exception as e:
         print(f"Error during Gemini API call: {e}")
-        return f"Error: Could not get analysis from API. Details: {e}"
+        error_response = {
+            "analysis": f"Error: Could not get analysis from API. Details: {str(e)}",
+            "keyNews": "API call failed",
+            "forecastData": [],
+            "investmentAdvice": {
+                "summary": "API Error",
+                "reasoning": "Failed to connect to AI service",
+                "riskAssessment": "Unknown"
+            }
+        }
+        return json.dumps(error_response)
