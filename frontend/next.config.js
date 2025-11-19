@@ -14,6 +14,8 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  trailingSlash: true,
+  skipTrailingSlashRedirect: true,
 }
 
 module.exports = nextConfig
