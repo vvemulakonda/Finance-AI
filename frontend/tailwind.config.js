@@ -73,6 +73,5 @@ module.exports = {
       },
     },
   },
-  // Remove this line if you don't need animations:
-  // plugins: [require("tailwindcss-animate")],
+  plugins: [require("tailwindcss-animate")],
 }
