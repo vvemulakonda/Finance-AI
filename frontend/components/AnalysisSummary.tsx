@@ -2,16 +2,17 @@
 
 import { FileText, Newspaper } from "lucide-react";
 
+// Define the props interface
+interface AnalysisSummaryProps {
+  analysis: string;
+  keyNews: string;
+}
+
 // --- 1. Define the props this component will receive ---
 export function AnalysisSummary({ analysis, keyNews }: AnalysisSummaryProps) {
   return (
     <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-lg space-y-6">
       {/* Analysis Section */}
-      <div>
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Stock Ticker */}
       <div>
         <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white flex items-center">
           <FileText className="h-6 w-6 mr-2 text-blue-500" />
