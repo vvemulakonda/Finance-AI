@@ -256,7 +256,49 @@ def run_full_analysis_task(job_id: str, request: AnalysisRequest):
 
 # --- 6. API Endpoints (UPDATED) ---
 
-@app.post("/api/analyze", response_model=AnalysisResponse)
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {"message": "Finance AI Backend is running!"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
+
+@app.post("/api/analyze")
+async def analyze_direct(request: AnalysisRequest):
+    """
+    Simple endpoint that matches what the frontend expects
+    This provides immediate feedback while keeping your job system
+    """
+    try:
+        # For now, return a simple response to test the connection
+        test_response = {
+            "analysis": "This is a test analysis. Backend is connected!",
+            "investmentAdvice": {
+                "summary": "Test advice - backend is working",
+                "reasoning": "The connection between frontend and backend is successful",
+                "riskAssessment": "Low"
+            },
+            "forecastData": [
+                {"date": "2024-01", "price": 150},
+                {"date": "2024-02", "price": 155},
+                {"date": "2024-03", "price": 160}
+            ],
+            "recommendedStocks": [
+                {"ticker": "AAPL", "reason": "Strong fundamentals"},
+                {"ticker": "MSFT", "reason": "Cloud growth"}
+            ],
+            "keyNews": "Test news: Backend connection successful"
+        }
+        
+        return {"analysis": json.dumps(test_response)}
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/start-analysis", response_model=AnalysisResponse)
 async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
     """
     This endpoint creates a new job, starts it in the background,
@@ -291,4 +333,3 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0") 
     print(f"--- Running on http://{host}:{port} ---")
     uvicorn.run("api_server:app", host=host, port=port, reload=False)
-
