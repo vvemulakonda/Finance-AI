@@ -16,9 +16,11 @@ import {
   AnalysisResult,
 } from "@/lib/types";
 
-// Get the API URL from the environment file
-// Next.js requires the prefix NEXT_PUBLIC_ to access it in the browser
+// HARDCODED BACKEND URL - Replace the environment variable
 const API_BASE_URL = "https://financeaibackend-uup2.onrender.com";
+
+// Debug log to check what URL we're using
+console.log('Using API URL:', API_BASE_URL);
 
 // --- The Main Page Component ---
 export default function Home() {
