@@ -18,7 +18,7 @@ import {
 
 // Get the API URL from the environment file
 // Next.js requires the prefix NEXT_PUBLIC_ to access it in the browser
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = "https://financeaibackend-uup2.onrender.com";
 
 // --- The Main Page Component ---
 export default function Home() {
