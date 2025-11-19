@@ -256,7 +256,7 @@ def run_full_analysis_task(job_id: str, request: AnalysisRequest):
 
 # --- 6. API Endpoints (UPDATED) ---
 
-@app.post("/api/start-analysis", response_model=AnalysisResponse)
+@app.post("/api/analyze", response_model=AnalysisResponse)
 async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
     """
     This endpoint creates a new job, starts it in the background,
@@ -291,3 +291,4 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0") 
     print(f"--- Running on http://{host}:{port} ---")
     uvicorn.run("api_server:app", host=host, port=port, reload=False)
+
