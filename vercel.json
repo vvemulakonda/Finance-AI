@@ -1,4 +1,9 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next"，
+  "functions": {
+    "**/*.js": {
+      "maxDuration": 30
+    }
+  }
 }
