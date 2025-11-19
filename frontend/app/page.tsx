@@ -12,10 +12,6 @@ import { RecommendedStocks } from "components/RecommendedStocks";
 import { AnalysisSummary } from "components/AnalysisSummary";
 import { SearchFormState, AnalysisResult } from "lib/types";
 // --- NEW: Import types from the dedicated types file ---
-import {
-  SearchFormState,
-  AnalysisResult,
-} from "../lib/types";
 
 // HARDCODED BACKEND URL - Replace the environment variable
 const API_BASE_URL = "https://financeaibackend-uup2.onrender.com";
