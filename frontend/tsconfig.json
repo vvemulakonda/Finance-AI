@@ -13,7 +13,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "baseUrl": ".",  // ← ADD THIS LINE
+    "baseUrl": ".",
     "plugins": [
       {
         "name": "next"
