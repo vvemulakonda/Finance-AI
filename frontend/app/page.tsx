@@ -5,12 +5,12 @@ import axios from "axios";
 import { Loader2, AlertTriangle, Zap } from "lucide-react";
 
 // --- Use standard alias paths defined in tsconfig.json ---
-import { SearchForm } from "../components/SearchForm";
-import { StockChart } from "../components/StockChart";
-import { InvestmentAdvice } from "../components/InvestmentAdvice";
-import { RecommendedStocks } from "../components/RecommendedStocks";
-import { AnalysisSummary } from "../components/AnalysisSummary";
-import { SearchFormState, AnalysisResult } from "../lib/types";
+import { SearchForm } from "components/SearchForm";
+import { StockChart } from "components/StockChart";
+import { InvestmentAdvice } from "components/InvestmentAdvice";
+import { RecommendedStocks } from "components/RecommendedStocks";
+import { AnalysisSummary } from "components/AnalysisSummary";
+import { SearchFormState, AnalysisResult } from "lib/types";
 // --- NEW: Import types from the dedicated types file ---
 import {
   SearchFormState,
