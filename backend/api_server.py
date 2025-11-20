@@ -267,35 +267,47 @@ async def health_check():
     return {"status": "healthy"}
 
 @app.post("/api/analyze")
-async def analyze_direct(request: AnalysisRequest):
+async def analyze_direct(request: AnalysisRequest, background_tasks: BackgroundTasks):
     """
-    Simple endpoint that matches what the frontend expects
-    This provides immediate feedback while keeping your job system
+    Real analysis endpoint that processes user inputs
     """
     try:
-        # For now, return a simple response to test the connection
-        test_response = {
-            "analysis": "This is a test analysis. Backend is connected!",
+        print(f"=== Starting Real Analysis ===")
+        print(f"Ticker: {request.ticker}")
+        print(f"Risk: {request.riskTolerance}")
+        print(f"Expected Return: {request.expectedReturn}%")
+        
+        # Check cache first
+        cached_result = get_cached_analysis(request.ticker)
+        if cached_result:
+            print("Returning cached result")
+            return {"analysis": cached_result}
+        
+        # Create a job for background processing
+        job_id = str(uuid.uuid4())
+        create_job(job_id)
+        
+        # Start the real analysis in background
+        background_tasks.add_task(run_full_analysis_task, job_id, request)
+        
+        # For now, return a simple response while processing
+        # In a real app, you'd use the job system to check status
+        simple_response = {
+            "analysis": "Analysis started... this may take a moment.",
             "investmentAdvice": {
-                "summary": "Test advice - backend is working",
-                "reasoning": "The connection between frontend and backend is successful",
-                "riskAssessment": "Low"
+                "summary": "Processing your request",
+                "reasoning": "AI is analyzing your inputs",
+                "riskAssessment": "Calculating..."
             },
-            "forecastData": [
-                {"date": "2024-01", "price": 150},
-                {"date": "2024-02", "price": 155},
-                {"date": "2024-03", "price": 160}
-            ],
-            "recommendedStocks": [
-                {"ticker": "AAPL", "reason": "Strong fundamentals"},
-                {"ticker": "MSFT", "reason": "Cloud growth"}
-            ],
-            "keyNews": "Test news: Backend connection successful"
+            "forecastData": [],
+            "recommendedStocks": [],
+            "keyNews": "Fetching latest news..."
         }
         
-        return {"analysis": json.dumps(test_response)}
+        return {"analysis": json.dumps(simple_response)}
         
     except Exception as e:
+        print(f"Error in analyze_direct: {e}")
         return {"error": str(e)}
 
 @app.post("/api/start-analysis", response_model=AnalysisResponse)
@@ -333,3 +345,4 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0") 
     print(f"--- Running on http://{host}:{port} ---")
     uvicorn.run("api_server:app", host=host, port=port, reload=False)
+
