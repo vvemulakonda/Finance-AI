@@ -14,6 +14,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  pageExtensions: ['tsx', 'ts', 'jsx', 'js'], 
   trailingSlash: true,
   skipTrailingSlashRedirect: true,
 }
