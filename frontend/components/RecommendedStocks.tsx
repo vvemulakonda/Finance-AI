@@ -1,7 +1,7 @@
 "use client";
 import { Briefcase } from "lucide-react";
 // --- FIX: Using relative path to import the type from page.tsx ---
-import { InvestmentAdvice } from "../components/InvestmentAdvice.tsx";
+import { InvestmentAdvice } from "./components/InvestmentAdvice.tsx";
 
 // This is a placeholder.
 export function RecommendedStocks({ data }: { data: RecommendedStockData[] }) {
