@@ -1,10 +1,10 @@
 "use client";
 
-import { Button } from "./components/ui/button.tsx";
-import { Input } from "./components/ui/input.tsx";
-import { Label } from "./components/ui/label.tsx";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select.tsx";
-import { Textarea } from "./components/ui/textarea.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Input } from "../components/ui/input.tsx";
+import { Label } from "../components/ui/label.tsx";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.tsx";
+import { Textarea } from "../components/ui/textarea.tsx";
 import { Loader2, Zap } from "lucide-react";
 
 // --- 1. Define the props this component will receive ---
