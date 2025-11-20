@@ -17,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
   CardDescription
-} from "./components/ui/card.tsx"; // Using Shadcn/ui Card component
+} from "../components/ui/card.tsx"; // Using Shadcn/ui Card component
 
 // --- FIX: Using relative path to import the type from page.tsx ---
 import { ForecastData } from "../lib/types.ts";
