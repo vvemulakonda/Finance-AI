@@ -2,7 +2,7 @@
 
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
-import { Label } from "../components/ui/label.tsx";
+import { Label } from "../components/ui/lable.tsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
 import { Loader2, Zap } from "lucide-react";
